@@ -17,6 +17,7 @@ import (
 	"github.com/transparency-dev/witness/monitoring"
 	"github.com/transparency-dev/witness/omniwitness"
 	"golang.org/x/mod/sumdb/note"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -71,9 +72,10 @@ func main() {
 
 // Witness metadata
 type Meta struct {
-	zone string
-	name string
-	key  string
+	zone     string
+	name     string
+	key      string
+	audience string
 }
 
 // Returns metadata from the environment
@@ -100,6 +102,11 @@ func getMetadata(ctx context.Context) Meta {
 		log.Fatalf("Environment variable WITNESS_KEY is not set or is empty")
 	}
 
+	meta.audience = os.Getenv("WITNESS_AUDIENCE")
+	if meta.audience == "" {
+		log.Fatalf("Environment variable WITNESS_AUDIENCE is not set or is empty")
+	}
+
 	return meta
 }
 
@@ -117,7 +124,7 @@ func getName(meta Meta) string {
 // to the way it initializes the underlying note signers, which is not possible for a
 // key in Cloud KMS. This could be fixed by extending OperatorConfig with a []note.Signer.
 func getSeed(ctx context.Context, meta Meta) io.Reader {
-	sig, err := signAsymmetric(ctx, getName(meta), meta.key)
+	sig, err := signAsymmetric(ctx, getName(meta), meta.key, meta.audience)
 	if err != nil {
 		log.Fatalln("Failed to sign message:", err)
 	}
@@ -131,9 +138,22 @@ func getSeed(ctx context.Context, meta Meta) io.Reader {
 
 // signAsymmetric will sign a plaintext message using a saved asymmetric private
 // key stored in Cloud KMS.
-func signAsymmetric(ctx context.Context, message string, key string) ([]byte, error) {
+func signAsymmetric(ctx context.Context, message string, key string, audience string) ([]byte, error) {
+	// this token is managed by the confidential space runner
+	attestation_token_path := "/run/container_launcher/attestation_verifier_claims_token"
+
+	creds := fmt.Sprintf(`{
+	"type": "external_account",
+	"audience": "%s",
+	"subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+	"token_url": "https://sts.googleapis.com/v1/token",
+	"credential_source": {
+	  "file": "%s"
+	}
+	}`, audience, attestation_token_path)
+
 	// Create the client.
-	client, err := kms.NewKeyManagementClient(ctx)
+	client, err := kms.NewKeyManagementClient(ctx, option.WithCredentialsJSON([]byte(creds)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kms client: %w", err)
 	}

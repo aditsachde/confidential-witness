@@ -20,6 +20,6 @@ EXPOSE 8080/tcp
 
 # The settable environment variables must be explicity declared here
 # https://cloud.google.com/confidential-computing/confidential-space/docs/create-customize-workloads#launch_policies
-LABEL "tee.launch_policy.allow_env_override"="WITNESS_KEY,WITNESS_NAME"
+LABEL "tee.launch_policy.allow_env_override"="WITNESS_KEY,WITNESS_NAME,WITNESS_AUDIENCE"
 
 CMD ["/app"]
