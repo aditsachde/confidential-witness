@@ -32,6 +32,15 @@ func main() {
 	}
 	log.Println("public key:", vkey)
 
+	// Serve the public key on port 8080 so that it is actually accessible somewhere.
+	// Confidential spaces disable logs on production workloads.
+	go func() {
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, vkey)
+		})
+		http.ListenAndServe(":8080", nil)
+	}()
+
 	o_operatorConfig := omniwitness.OperatorConfig{
 		WitnessKey: skey,
 	}
