@@ -6,13 +6,15 @@ WORKDIR /go/src/app
 COPY go.mod go.sum .
 RUN go mod download
 
-COPY . .
-RUN CGO_ENABLED=0 go build -o /go/bin/app ./src
+COPY ./cmd/confidential-witness .
+RUN CGO_ENABLED=0 go build -o /go/bin/app
 
 FROM gcr.io/distroless/static-debian12
 
 COPY --from=build /go/bin/app /
 
+# Exposed ports must be defined in the Dockerfile
+# https://cloud.google.com/confidential-computing/confidential-space/docs/create-customize-workloads#inbound-ports
 # Witness port
 EXPOSE 80/tcp
 # Public key served on this port

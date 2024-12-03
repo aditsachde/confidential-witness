@@ -72,7 +72,7 @@ func main() {
 
 // Witness metadata
 type Meta struct {
-	zone     string
+	region     string
 	name     string
 	key      string
 	audience string
@@ -87,9 +87,9 @@ func getMetadata(ctx context.Context) Meta {
 		if err != nil {
 			log.Fatalln("Failed to get zone:", err)
 		}
-		meta.zone = zone
+		meta.region = zone[:len(zone)-2]
 	} else {
-		meta.zone = "dev"
+		meta.region = "dev"
 	}
 
 	meta.name = os.Getenv("WITNESS_NAME")
@@ -113,7 +113,7 @@ func getMetadata(ctx context.Context) Meta {
 // Returns a name for the witness that is unique to the zone
 // to allow for multiple witnesses with the same configuration
 func getName(meta Meta) string {
-	return meta.name + "-" + meta.zone
+	return meta.name + "-" + meta.region
 }
 
 // getSeed returns a fixed seed for the key generation process.
