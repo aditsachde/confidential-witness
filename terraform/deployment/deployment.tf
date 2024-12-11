@@ -3,12 +3,12 @@ data "google_project" "project" {
 }
 
 resource "google_kms_key_ring" "witness_keyring" {
-  name     = "witness-keyring3"
+  name     = "witness-keyring"
   location = var.region
 }
 
 resource "google_kms_crypto_key" "witness_key" {
-  name     = "witness-key3"
+  name     = "witness-key"
   key_ring = google_kms_key_ring.witness_keyring.id
   purpose  = "ASYMMETRIC_SIGN"
 
@@ -61,7 +61,7 @@ resource "google_iam_workload_identity_pool_provider" "attestation_verifier" {
     'STABLE' in assertion.submods.confidential_space.support_attributes &&
     assertion.swname=='CONFIDENTIAL_SPACE' &&
     assertion.submods.gce.project_id=='${var.project_id}' &&
-    assertion.submods.container.image_digest=='sha256:${var.image_digest}' &&
+    ['ECDSA_P256_SHA256:${var.key_fingerprint}'].exists(fingerprint, fingerprint in assertion.submods.container.image_signatures.map(sig, sig.signature_algorithm+':'+sig.key_id)) &&
     assertion.submods.container.env.WITNESS_KEY=='${local.witness_key}' &&
     assertion.submods.container.env.WITNESS_NAME=='${local.witness_name}' &&
     assertion.submods.container.env.WITNESS_AUDIENCE=='${local.witness_audience}' &&
@@ -71,22 +71,28 @@ resource "google_iam_workload_identity_pool_provider" "attestation_verifier" {
 
 # ----------------------------------------------------------
 
+locals {
+  trusted_image_iam_member = "principalSet://iam.googleapis.com/projects/${
+    data.google_project.project.number
+    }/locations/global/workloadIdentityPools/${
+    google_iam_workload_identity_pool_provider.attestation_verifier.workload_identity_pool_id
+  }/*" // already verified by the attribute_condition
+}
+
 data "google_iam_policy" "trusted_image" {
   binding {
-    role = "roles/cloudkms.signer"
-    members = ["principalSet://iam.googleapis.com/projects/${
-      data.google_project.project.number
-      }/locations/global/workloadIdentityPools/${
-      google_iam_workload_identity_pool_provider.attestation_verifier.workload_identity_pool_id
-      }/attribute.image_digest/sha256:${
-      var.image_digest
-    }"]
+    role    = "roles/cloudkms.signer"
+    members = [local.trusted_image_iam_member]
   }
 }
 
 resource "google_kms_key_ring_iam_policy" "trusted_workload_binding" {
   key_ring_id = google_kms_key_ring.witness_keyring.id
   policy_data = data.google_iam_policy.trusted_image.policy_data
+}
+
+output "trusted_image_iam_member" {
+  value = local.trusted_image_iam_member
 }
 
 # ----------------------------------------------------------
@@ -118,7 +124,8 @@ resource "google_compute_region_instance_template" "witness_template" {
   machine_type = "n2d-highcpu-2"
 
   metadata = {
-    "tee-image-reference"      = "ghcr.io/aditsachde/confidential-witness@sha256:${var.image_digest}"
+    "tee-image-reference"      = "ghcr.io/${var.repository}:latest"
+    "tee-signed-image-repos"   = "ghcr.io/${var.repository}"
     "tee-env-WITNESS_KEY"      = local.witness_key
     "tee-env-WITNESS_NAME"     = local.witness_name
     "tee-env-WITNESS_AUDIENCE" = local.witness_audience
@@ -133,7 +140,7 @@ resource "google_compute_region_instance_template" "witness_template" {
 
   network_interface {
     access_config {
-      network_tier = "STANDARD"
+      network_tier = "PREMIUM"
     }
 
     network = google_compute_network.witness.self_link
@@ -203,6 +210,20 @@ resource "google_compute_region_instance_group_manager" "witness_mig" {
 
   instance_lifecycle_policy {
     force_update_on_repair = "YES"
+  }
+
+  update_policy {
+    type                         = "PROACTIVE"
+    minimal_action               = "REPLACE"
+    max_unavailable_fixed        = 3
+    instance_redistribution_type = "NONE"
+    replacement_method           = "RECREATE"
+    max_surge_fixed = 0
+  }
+
+  stateful_external_ip {
+    interface_name = "nic0"
+    delete_rule    = "ON_PERMANENT_INSTANCE_DELETION"
   }
 
   lifecycle {

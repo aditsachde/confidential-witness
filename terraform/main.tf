@@ -1,7 +1,18 @@
+terraform {
+  required_providers {
+    github = {
+      source  = "integrations/github"
+      version = "~> 6.0"
+    }
+  }
+}
+
 provider "google" {
   project = var.project_id
   region  = var.region
 }
+
+provider "github" {}
 
 data "google_project" "project" {
   project_id = var.project_id
@@ -12,22 +23,25 @@ module "services" {
   project_id = var.project_id
 }
 
-module "deployment" {
-  source       = "./deployment"
+module "auditing" {
+  source       = "./auditing"
   project_id   = var.project_id
   region       = var.region
+  repository   = var.repository
   image_digest = var.image_digest
 
   depends_on = [module.services]
 }
 
-# # Remove all default service accounts. Specifically used for removing the default compute service account
-# resource "google_project_default_service_accounts" "remove_default" {
-#   project    = var.project_id
-#   action     = "DELETE"
-#   depends_on = [module.services]
-# }
+module "deployment" {
+  source          = "./deployment"
+  project_id      = var.project_id
+  region          = var.region
+  key_fingerprint = module.auditing.key_fingerprint
+  repository      = var.repository
 
+  depends_on = [module.auditing]
+}
 
 # Remove all project level roles (particularly owner and editor) using google_project_iam_policy
 # except for the minimal set required to function
@@ -38,18 +52,37 @@ data "google_iam_policy" "minimal_roles" {
     members = [module.deployment.compute_engine_service_account_member]
   }
 
-  # These two roles are needed for managed instance groups to function
+  # This role is needed for managed instance groups to function
   binding {
-    role    = "roles/compute.instanceAdmin.v1"
+    role    = "roles/compute.instanceGroupManagerServiceAgent"
     members = ["serviceAccount:${data.google_project.project.number}@cloudservices.gserviceaccount.com"]
   }
+
+  # These roles are used to retrieve data used for auditing
+  audit_config {
+    service = "cloudkms.googleapis.com"
+    audit_log_configs {
+      log_type         = "DATA_READ"
+      # Exempt due to the high volume of actions performed in the trusted image
+      exempted_members = [module.deployment.trusted_image_iam_member]
+    }
+  }
+
   binding {
-    role    = "roles/iam.serviceAccountUser"
-    members = ["serviceAccount:${data.google_project.project.number}@cloudservices.gserviceaccount.com"]
+    role    = "roles/cloudkms.publicKeyViewer"
+    members = [module.auditing.github_action_iam_member]
   }
   binding {
-    role    = "roles/owner"
-    members = ["user:adit@itko.dev"]
+    role    = "roles/logging.privateLogViewer"
+    members = [module.auditing.github_action_iam_member]
+  }
+  binding {
+    role    = "roles/iam.securityReviewer"
+    members = [module.auditing.github_action_iam_member]
+  }
+  binding {
+    role    = "roles/iam.workloadIdentityPoolViewer"
+    members = [module.auditing.github_action_iam_member]
   }
 }
 

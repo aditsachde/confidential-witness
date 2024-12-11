@@ -1,0 +1,76 @@
+name: Verify and Sign Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify-and-sign:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # needed for signing the images with GitHub OIDC Token
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2.1.0
+        with:
+          registry: ghcr.io
+          username: $${{ github.actor }}
+          password: $${{ secrets.GITHUB_TOKEN }}
+
+      # Step 2: Read the hash from the file and store it in an environment variable
+      - name: Read Digest File
+        id: read-digest
+        run: |
+          DIGEST=$(cat digest)
+          echo "DIGEST=$DIGEST" >> $GITHUB_ENV
+          echo "UPSTREAM=ghcr.io/aditsachde/confidential-witness@sha256:$DIGEST" >> $GITHUB_ENV
+          echo "TAG=ghcr.io/$${{ github.repository }}:latest" >> $GITHUB_ENV
+          echo "TAG_DIGEST=ghcr.io/$${{ github.repository }}@sha256:$DIGEST" >> $GITHUB_ENV
+
+      # Step 3: Verify the image using the hash
+      - name: Verify Image with Cosign
+        run: |
+          cosign verify ghcr.io/aditsachde/confidential-witness@sha256:$DIGEST \
+            --certificate-identity="https://github.com/aditsachde/confidential-witness/.github/workflows/build.yml@refs/heads/main" \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+      # Step 4: Tag the image
+      - name: Tag Image
+        run: |
+          docker pull $UPSTREAM
+          docker tag $UPSTREAM $TAG
+
+      # Step 5: Setup authentication keys
+      - uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${workload_identity_provider}'
+
+      # Step 6: Sign the image with Cosign
+      # See: https://codelabs.developers.google.com/signed-container-image-codelab#2
+      - name: Sign Image with Cosign
+        run: |
+          KEY="gcpkms://${crypto_key_reference}"
+          cosign public-key --key $KEY | tee pub.pem
+          PUB=$(cat pub.pem | openssl base64)
+          PUB=$(echo $PUB | tr -d '[:space:]' | sed 's/[=]*$//')
+        
+          cosign sign --yes --key $KEY \
+            -a dev.cosignproject.cosign/sigalg=ECDSA_P256_SHA256 \
+            -a dev.cosignproject.cosign/pub=$PUB \
+            $TAG_DIGEST
+
+      # Step 7: Push the image
+      - name: Push Image
+        run: |
+          docker push $TAG
