@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - digest
 
 jobs:
   verify-and-sign:
@@ -36,7 +38,6 @@ jobs:
           echo "DIGEST=$DIGEST" >> $GITHUB_ENV
           echo "UPSTREAM=ghcr.io/aditsachde/confidential-witness@sha256:$DIGEST" >> $GITHUB_ENV
           echo "TAG=ghcr.io/$${{ github.repository }}:latest" >> $GITHUB_ENV
-          echo "TAG_DIGEST=ghcr.io/$${{ github.repository }}@sha256:$DIGEST" >> $GITHUB_ENV
 
       # Step 3: Verify the image using the hash
       - name: Verify Image with Cosign
@@ -50,11 +51,13 @@ jobs:
         run: |
           docker pull $UPSTREAM
           docker tag $UPSTREAM $TAG
+          docker push $TAG
 
       # Step 5: Setup authentication keys
-      - uses: 'google-github-actions/auth@v2'
+      - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: '${workload_identity_provider}'
+          project_id: ${project_id}
+          workload_identity_provider: "${workload_identity_provider}"
 
       # Step 6: Sign the image with Cosign
       # See: https://codelabs.developers.google.com/signed-container-image-codelab#2
@@ -64,13 +67,8 @@ jobs:
           cosign public-key --key $KEY | tee pub.pem
           PUB=$(cat pub.pem | openssl base64)
           PUB=$(echo $PUB | tr -d '[:space:]' | sed 's/[=]*$//')
-        
+
           cosign sign --yes --key $KEY \
             -a dev.cosignproject.cosign/sigalg=ECDSA_P256_SHA256 \
             -a dev.cosignproject.cosign/pub=$PUB \
-            $TAG_DIGEST
-
-      # Step 7: Push the image
-      - name: Push Image
-        run: |
-          docker push $TAG
+            $TAG

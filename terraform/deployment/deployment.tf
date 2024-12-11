@@ -218,7 +218,7 @@ resource "google_compute_region_instance_group_manager" "witness_mig" {
     max_unavailable_fixed        = 3
     instance_redistribution_type = "NONE"
     replacement_method           = "RECREATE"
-    max_surge_fixed = 0
+    max_surge_fixed              = 0
   }
 
   stateful_external_ip {

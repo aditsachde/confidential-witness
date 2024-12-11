@@ -83,6 +83,15 @@ resource "google_kms_crypto_key" "signing_key" {
   depends_on = [google_kms_key_ring_iam_policy.signing_action_binding]
 }
 
+# Retain _Default logs for 400 days to match admin activity logs
+# These are used to log signing key usage
+resource "google_logging_project_bucket_config" "retain_logs" {
+    project    = var.project_id
+    location  = "global"
+    retention_days = 400
+    bucket_id = "_Default"
+}
+
 data "external" "fingerprint" {
   program = ["bash", "${path.module}/fingerprint.sh"]
   query = {

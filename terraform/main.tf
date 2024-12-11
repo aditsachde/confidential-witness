@@ -23,8 +23,8 @@ module "services" {
   project_id = var.project_id
 }
 
-module "auditing" {
-  source       = "./auditing"
+module "signing" {
+  source       = "./signing"
   project_id   = var.project_id
   region       = var.region
   repository   = var.repository
@@ -37,10 +37,10 @@ module "deployment" {
   source          = "./deployment"
   project_id      = var.project_id
   region          = var.region
-  key_fingerprint = module.auditing.key_fingerprint
+  key_fingerprint = module.signing.key_fingerprint
   repository      = var.repository
 
-  depends_on = [module.auditing]
+  depends_on = [module.signing]
 }
 
 # Remove all project level roles (particularly owner and editor) using google_project_iam_policy
@@ -58,7 +58,7 @@ data "google_iam_policy" "minimal_roles" {
     members = ["serviceAccount:${data.google_project.project.number}@cloudservices.gserviceaccount.com"]
   }
 
-  # These roles are used to retrieve data used for auditing
+  # These roles are used to retrieve data used for audits
   audit_config {
     service = "cloudkms.googleapis.com"
     audit_log_configs {
@@ -70,19 +70,19 @@ data "google_iam_policy" "minimal_roles" {
 
   binding {
     role    = "roles/cloudkms.publicKeyViewer"
-    members = [module.auditing.github_action_iam_member]
+    members = [module.signing.github_action_iam_member]
   }
   binding {
     role    = "roles/logging.privateLogViewer"
-    members = [module.auditing.github_action_iam_member]
+    members = [module.signing.github_action_iam_member]
   }
   binding {
     role    = "roles/iam.securityReviewer"
-    members = [module.auditing.github_action_iam_member]
+    members = [module.signing.github_action_iam_member]
   }
   binding {
     role    = "roles/iam.workloadIdentityPoolViewer"
-    members = [module.auditing.github_action_iam_member]
+    members = [module.signing.github_action_iam_member]
   }
 }
 
