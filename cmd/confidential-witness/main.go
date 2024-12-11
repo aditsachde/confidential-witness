@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	kms "cloud.google.com/go/kms/apiv1"
@@ -22,7 +23,8 @@ import (
 )
 
 func main() {
-	o_ctx := context.Background()
+	o_ctx, cancel := context.WithTimeout(context.Background(), 22*time.Hour)
+	defer cancel()
 	meta := getMetadata(o_ctx)
 
 	// Keygen
@@ -72,7 +74,7 @@ func main() {
 
 // Witness metadata
 type Meta struct {
-	region     string
+	region   string
 	name     string
 	key      string
 	audience string
