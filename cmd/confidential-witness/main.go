@@ -45,7 +45,8 @@ func main() {
 	}()
 
 	o_operatorConfig := omniwitness.OperatorConfig{
-		WitnessKey: skey,
+		WitnessKey:   skey,
+		FeedInterval: time.Minute,
 	}
 
 	// Persistence
