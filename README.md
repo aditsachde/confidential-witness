@@ -70,11 +70,13 @@ This option provides a lot more flexibility in the release verification layer, a
 6. Run `terraform apply`
 7. Done!
 
+This operation "seals" the project by removing your project owner role, which means that you will no longer be able to make any modifications or access any details of anything in the project. To unseal the project, someone with the Organization Administrator can grant access to the project. The OA cannot do anything beyond granting IAM access to the project, and the fact that IAM access was granted will show up in audit logs.
+
 # TODO
 1. auditing scripts
 2. gcs backend for persistence to prevent TOFU on instance preemption
     - an alternative is litestream
 3. Modify omniwitness to allow using ed25519 keys in KMS
 
-with spot instances, this is $10.58 per month
+with spot instances, this is $10.58 per month, or currently a bit under $9 in us-east5.
 for normal  instances, this is $44.96 per month
