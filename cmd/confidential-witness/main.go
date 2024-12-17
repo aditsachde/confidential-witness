@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -37,9 +38,10 @@ func main() {
 
 	// Serve the public key on port 8080 so that it is actually accessible somewhere.
 	// Confidential spaces disable logs on production workloads.
+	revision, modified := getRevision()
 	go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintln(w, vkey)
+			fmt.Fprintln(w, vkey+"\n\n"+revision+"\n"+modified)
 		})
 		http.ListenAndServe(":8080", nil)
 	}()
@@ -204,4 +206,17 @@ func signAsymmetric(ctx context.Context, message string, key string, audience st
 	}
 
 	return result.Signature, nil
+}
+
+// Current Git commit hash and if the repository is modified
+func getRevision() (revision string, modified string) {
+	info, _ := debug.ReadBuildInfo()
+	for _, i := range info.Settings {
+		if i.Key == "vcs.revision" {
+			revision = i.Value
+		} else if i.Key == "vcs.modified" {
+			modified = i.Value
+		}
+	}
+	return
 }
