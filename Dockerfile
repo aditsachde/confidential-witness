@@ -3,10 +3,10 @@ FROM golang:1.23 AS build
 
 WORKDIR /go/src/app
 
-COPY go.mod go.sum .
+COPY bootloader/go.mod bootloader/go.sum .
 RUN go mod download
 
-COPY ./cmd/confidential-witness .
+COPY bootloader/main.go .
 RUN CGO_ENABLED=0 go build -o /go/bin/app
 
 FROM gcr.io/distroless/static-debian12

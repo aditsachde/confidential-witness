@@ -5,7 +5,7 @@ on:
       - v*
 
 jobs:
-  build-and-release:
+  release-witness:
     runs-on: ubuntu-latest
 
     permissions:
@@ -24,11 +24,11 @@ jobs:
           go-version: stable
 
       - name: Build
-        run: go build -buildvcs=true ./cmd/confidential-witness
+        run: CGO_ENABLED=0 go build -buildvcs=true ./cmd/confidential-witness
 
       - name: Attest
         id: attest
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v2.1.0
         with:
           subject-path: confidential-witness
 
@@ -36,3 +36,77 @@ jobs:
         run: gh release create ${{ github.ref_name }} --generate-notes confidential-witness ${{ steps.attest.outputs.bundle-path }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  should-release-bootloader:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.should_release.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v3.5.2
+        with:
+          fetch-depth: 0 # fetch all tags for comparison
+
+      - name: Check diffs
+        id: should_release
+        run: |
+          latest_tag=$(git describe --tags)
+          previous_tag=$(git describe --tags ${latest_tag}~1)
+          diff=$(git diff --name-only ${previous_tag} ${latest_tag} -- bootloader)
+
+          if [[ -n "$diff" ]]; then
+            printf "Detected changes in bootloader\n${diff}\n"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            printf "No changes in bootloader\n"
+          fi
+
+  release-bootloader:
+    needs: should-release-bootloader
+    if: needs.should-release-bootloader.outputs.should_release == 'true'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write # necessary to push to GHCR
+      id-token: write # necessary to get a Sigstore signing certificate
+      attestations: write # necessary to persist the attestation
+
+    name: build-and-push
+    steps:
+      - uses: actions/checkout@v3.5.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2.5.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Docker Metadata
+        id: docker_meta
+        uses: docker/metadata-action@v4.4.0
+        with:
+          images: ghcr.io/aditsachde/confidential-witness
+          tags: type=sha,format=short,prefix=bootloader-
+
+      - name: Build and Push container images
+        uses: docker/build-push-action@v4.0.0
+        id: docker_build
+        with:
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+
+      - name: Attest
+        id: attest
+        uses: actions/attest-build-provenance@v2.1.0
+        with:
+          subject-name: ghcr.io/aditsachde/confidential-witness
+          subject-digest: ${{ steps.docker_build.outputs.digest }}
+          push-to-registry: true
