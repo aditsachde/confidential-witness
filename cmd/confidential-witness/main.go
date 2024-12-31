@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"hash/crc32"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -15,12 +12,10 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	kms "cloud.google.com/go/kms/apiv1"
-	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/transparency-dev/witness/monitoring"
 	"github.com/transparency-dev/witness/omniwitness"
 	"golang.org/x/mod/sumdb/note"
 	"google.golang.org/api/option"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func main() {
@@ -30,25 +25,32 @@ func main() {
 
 	// Keygen
 	// The key is seeded by a fixed seed. See getSeed for details.
-	skey, vkey, err := note.GenerateKey(getSeed(o_ctx, meta), getName(meta))
+	client, err := getClient(o_ctx, meta)
 	if err != nil {
-		log.Fatalln("Failed to generate key:", err)
+		log.Fatalln("Failed to create KMS client:", err)
 	}
-	log.Println("public key:", vkey)
+	defer client.Close()
+
+	noteKms, err := NewNoteKms(o_ctx, client, meta.key, meta.name)
+	if err != nil {
+		log.Fatalln("Failed to create NoteKms:", err)
+	}
 
 	// Serve the public key on port 8080 so that it is actually accessible somewhere.
 	// Confidential spaces disable logs on production workloads.
 	revision, modified := getRevision()
+	publicKey := noteKms.PublicKey()
 	go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintln(w, vkey+"\n\n"+revision+"\n"+modified)
+			fmt.Fprintln(w, publicKey+"\n\n"+revision+"\n"+modified)
 		})
 		http.ListenAndServe(":8080", nil)
 	}()
 
 	o_operatorConfig := omniwitness.OperatorConfig{
-		WitnessKey:   skey,
-		FeedInterval: time.Minute,
+		WitnessKeys:     []note.Signer{noteKms},
+		WitnessVerifier: noteKms,
+		FeedInterval:    time.Minute,
 	}
 
 	// Persistence
@@ -121,29 +123,8 @@ func getName(meta Meta) string {
 	return meta.name + "-" + meta.region
 }
 
-// getSeed returns a fixed seed for the key generation process.
-// The seed is the signature of the name using the private key stored in Cloud KMS.
-// This ensures that the key is unique to the witness and is bound to the key stored in KMS.
-//
-// This is necessary because omniwitness requires a key that resides in memory due
-// to the way it initializes the underlying note signers, which is not possible for a
-// key in Cloud KMS. This could be fixed by extending OperatorConfig with a []note.Signer.
-func getSeed(ctx context.Context, meta Meta) io.Reader {
-	sig, err := signAsymmetric(ctx, getName(meta), meta.key, meta.audience)
-	if err != nil {
-		log.Fatalln("Failed to sign message:", err)
-	}
-
-	// Truncate signature to 32 bytes
-	var seed [32]byte
-	copy(seed[:], sig)
-
-	return bytes.NewReader(seed[:])
-}
-
-// signAsymmetric will sign a plaintext message using a saved asymmetric private
-// key stored in Cloud KMS.
-func signAsymmetric(ctx context.Context, message string, key string, audience string) ([]byte, error) {
+// Create a new Cloud KMS Client
+func getClient(ctx context.Context, meta Meta) (*kms.KeyManagementClient, error) {
 	// this token is managed by the confidential space runner
 	attestation_token_path := "/run/container_launcher/attestation_verifier_claims_token"
 
@@ -155,57 +136,14 @@ func signAsymmetric(ctx context.Context, message string, key string, audience st
 	"credential_source": {
 	  "file": "%s"
 	}
-	}`, audience, attestation_token_path)
+	}`, meta.audience, attestation_token_path)
 
 	// Create the client.
 	client, err := kms.NewKeyManagementClient(ctx, option.WithCredentialsJSON([]byte(creds)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kms client: %w", err)
 	}
-	defer client.Close()
-
-	// Convert the message into bytes. Cryptographic plaintexts and
-	// ciphertexts are always byte arrays.
-	plaintext := []byte(message)
-
-	// Optional but recommended: Compute digest's CRC32C.
-	crc32c := func(data []byte) uint32 {
-		t := crc32.MakeTable(crc32.Castagnoli)
-		return crc32.Checksum(data, t)
-
-	}
-	dataCRC32C := crc32c(plaintext)
-
-	// Build the signing request.
-	//
-	// Note: Key algorithms will require a varying hash function. For example,
-	// EC_SIGN_P384_SHA384 requires SHA-384.
-	req := &kmspb.AsymmetricSignRequest{
-		Name:       key,
-		Data:       plaintext,
-		DataCrc32C: wrapperspb.Int64(int64(dataCRC32C)),
-	}
-
-	// Call the API.
-	result, err := client.AsymmetricSign(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign digest: %w", err)
-	}
-
-	// Optional, but recommended: perform integrity verification on result.
-	// For more details on ensuring E2E in-transit integrity to and from Cloud KMS visit:
-	// https://cloud.google.com/kms/docs/data-integrity-guidelines
-	if result.VerifiedDataCrc32C == false {
-		return nil, fmt.Errorf("AsymmetricSign: request corrupted in-transit 1")
-	}
-	if result.Name != req.Name {
-		return nil, fmt.Errorf("AsymmetricSign: request corrupted in-transit 2")
-	}
-	if int64(crc32c(result.Signature)) != result.SignatureCrc32C.Value {
-		return nil, fmt.Errorf("AsymmetricSign: response corrupted in-transit 3")
-	}
-
-	return result.Signature, nil
+	return client, nil
 }
 
 // Current Git commit hash and if the repository is modified
