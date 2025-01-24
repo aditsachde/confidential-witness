@@ -37,7 +37,7 @@ resource "google_iam_workload_identity_pool" "trusted_workload" {
 
 locals {
   witness_key  = "${google_kms_crypto_key.witness_key.id}/cryptoKeyVersions/1"
-  witness_name = "confidential-witness-${var.project_id}"
+  witness_name = "ConfidentialWitness-${var.project_id}"
   # The provider name cannot be set automatically because otherwise there is a circular dependency
   witness_audience = "//iam.googleapis.com/${google_iam_workload_identity_pool.trusted_workload.name}/providers/attestation-verifier"
 }
@@ -60,8 +60,8 @@ resource "google_iam_workload_identity_pool_provider" "attestation_verifier" {
   attribute_condition = <<EOF
     'STABLE' in assertion.submods.confidential_space.support_attributes &&
     assertion.swname=='CONFIDENTIAL_SPACE' &&
+    assertion.submods.container.image_reference=='${var.bootloader}' &&
     assertion.submods.gce.project_id=='${var.project_id}' &&
-    ['ECDSA_P256_SHA256:${var.key_fingerprint}'].exists(fingerprint, fingerprint in assertion.submods.container.image_signatures.map(sig, sig.signature_algorithm+':'+sig.key_id)) &&
     assertion.submods.container.env.WITNESS_KEY=='${local.witness_key}' &&
     assertion.submods.container.env.WITNESS_NAME=='${local.witness_name}' &&
     assertion.submods.container.env.WITNESS_AUDIENCE=='${local.witness_audience}' &&
@@ -81,7 +81,7 @@ locals {
 
 data "google_iam_policy" "trusted_image" {
   binding {
-    role    = "roles/cloudkms.signer"
+    role    = "roles/cloudkms.signerVerifier"
     members = [local.trusted_image_iam_member]
   }
 }
@@ -111,7 +111,7 @@ resource "google_compute_firewall" "witness" {
 
   allow {
     protocol = "tcp"
-    ports    = ["80", "8080"]
+    ports    = ["80", "443", "8080", "8443"]
   }
 
   source_ranges = ["0.0.0.0/0"]
@@ -124,8 +124,7 @@ resource "google_compute_region_instance_template" "witness_template" {
   machine_type = "n2d-highcpu-2"
 
   metadata = {
-    "tee-image-reference"      = "ghcr.io/${var.repository}:latest"
-    "tee-signed-image-repos"   = "ghcr.io/${var.repository}"
+    "tee-image-reference"      = "${var.bootloader}"
     "tee-env-WITNESS_KEY"      = local.witness_key
     "tee-env-WITNESS_NAME"     = local.witness_name
     "tee-env-WITNESS_AUDIENCE" = local.witness_audience
@@ -140,7 +139,7 @@ resource "google_compute_region_instance_template" "witness_template" {
 
   network_interface {
     access_config {
-      network_tier = "PREMIUM"
+      network_tier = "STANDARD"
     }
 
     network = google_compute_network.witness.self_link
@@ -229,4 +228,53 @@ resource "google_compute_region_instance_group_manager" "witness_mig" {
   lifecycle {
     replace_triggered_by = [google_compute_region_instance_template.witness_template.id]
   }
+}
+
+# ----------------------------------------------------------
+# Auditing identity pool
+
+resource "google_iam_workload_identity_pool" "github_provider" {
+  workload_identity_pool_id = "github-actions-pool"
+}
+
+resource "google_iam_workload_identity_pool_provider" "github_provider" {
+  workload_identity_pool_provider_id = "github-provider"
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github_provider.workload_identity_pool_id
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+
+  attribute_mapping = {
+    "google.subject"             = "assertion.sub",
+    "attribute.actor"            = "assertion.actor"
+    "attribute.aud"              = "assertion.aud"
+    "attribute.repository"       = "assertion.repository"
+    "attribute.repository_owner" = "assertion.repository_owner"
+  }
+
+  attribute_condition = <<EOF
+    attribute.repository_owner=='aditsachde' ||
+    attribute.repository_owner=='transparency-dev'
+  EOF
+}
+
+locals {
+  github_action_iam_member = "principalSet://iam.googleapis.com/projects/${
+    data.google_project.project.number
+    }/locations/global/workloadIdentityPools/${
+    google_iam_workload_identity_pool_provider.github_provider.workload_identity_pool_id
+  }/*"
+}
+
+output "github_action_iam_member" {
+  value = local.github_action_iam_member
+}
+
+# Retain _Default logs for 400 days to match admin activity logs
+resource "google_logging_project_bucket_config" "retain_logs" {
+  project        = var.project_id
+  location       = "global"
+  retention_days = 400
+  bucket_id      = "_Default"
 }

@@ -8,12 +8,8 @@ variable "region" {
   type        = string
 }
 
-variable "image_digest" {
-  description = "SHA256 hash of the container to deploy."
+variable "bootloader" {
+  description = "Ref for bootloader image."
   type        = string
-}
-
-variable "repository" {
-  description = "GitHub repository for auditing workflows."
-  type        = string
+  default     = "ghcr.io/aditsachde/confidential-witness@sha256:b634433ac01a0f43c05bbeb257044b990fee51a3128a5a5310192a5bddc9bc2d"
 }

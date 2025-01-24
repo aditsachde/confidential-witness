@@ -1,6 +1,6 @@
 ```
-confidential-witness-urban-octo-telegram-us-east5+7395fc96+AU5kaDj7Jcujhmka2FcoB9tJVxCCzfEKGmDRFnrmEPqu
-curl urban-octo-telegram.itko.dev/witness/v0/logs
+ConfidentialWitness-buoyant-planet+af4c4125+AaUzzyskbukNz6DJHmPv7DZ4tG4heL51U2ER21TQN9Zm
+curl buoyant-planet.itko.dev/witness/v0/logs
 ```
 
 # How this works
@@ -61,14 +61,11 @@ This option provides a lot more flexibility in the release verification layer, a
 
 1. Ensuring a default billing configuration exists.
 2. Create a new project. Don't touch it.
-3. Create a new github repository.
-4. Login
+3. Login
     - `gcloud auth application-default login`
-    - `export GITHUB_TOKEN=`
-        - token needs R/W access to `code` and `workflows` on your Github repo
-5. Fill out terraform.tfvars
-6. Run `terraform apply`
-7. Done!
+4. Fill out terraform.tfvars
+5. Run `terraform apply`
+6. Done!
 
 This operation "seals" the project by removing your project owner role, which means that you will no longer be able to make any modifications or access any details of anything in the project. To unseal the project, someone with the Organization Administrator can grant access to the project. The OA cannot do anything beyond granting IAM access to the project, and the fact that IAM access was granted will show up in audit logs.
 

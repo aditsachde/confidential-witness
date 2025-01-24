@@ -8,12 +8,7 @@ variable "region" {
   type        = string
 }
 
-variable "key_fingerprint" {
-  description = "Fingerprint of the image signing key."
-  type        = string
-}
-
-variable "repository" {
-  description = "GitHub repository for auditing workflows."
+variable "bootloader" {
+  description = "Ref for bootloader image."
   type        = string
 }
