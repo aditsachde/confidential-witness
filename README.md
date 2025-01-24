@@ -40,22 +40,9 @@ The first two output the current configuration of the IAM setup to verify that i
 
 ## Software updates
 
-### Option 1
+The actual container set in the confidential space is a "bootloader" container which fetches the latest release of the software from this repository. This bootloader container never changes over the life of the witness. If an issue is found in this component, then the witness should be distrusted. 
 
-Are software updates actually necessary? Is it ok to just replace the witness+private key altogether when a new version of omniwitness needs to be deployed?
-
-### Option 2
-
-What is currently implemented is an [intermediate repository](https://github.com/aditsachde/urban-octo-telegram) which has an image with a `latest` tag. The GH action fetches an image with the specified digest, checks if it was signed by an actions run in this repository, and retags it and resigns it with a mutable tag and a long living private key. The confidential space runtime verifies this signature via the `assertion.submods.container.image_signatures` field, which is used as part of the attribute conditions in place of the image digest.
-
-I think some games can be played by the owner of the repository, which means that the signing key usage needs to be audited through data access logs published by KMS. Not sure I like this solution, but the confidential computing service in GCP is restrictive of what attestation attributes it provides.
-
-### Option 3
-
-The actual container set in the confidential space could be a "bootloader" container which fetches the latest release of the software from this repository. This bootloader container would never change over the life of the witness. If an issue is found in this component, then the witness would be distrusted. 
-
-This option provides a lot more flexibility in the release verification layer, allowing us to define the logic and signature verification. However, this would require careful understanding of the bootloader logic, ensuring that it will not do anything unexpected and is not vurnerable to MTIM style attacks, as the operator would be able to inspect and mess with traffic going in and out of the container.
-
+The bootloader code can be found in the `bootloader` directory. One release of the bootloader has been currently made. The built container can be found at `ghcr.io/aditsachde/confidential-witness@sha256:b634433ac01a0f43c05bbeb257044b990fee51a3128a5a5310192a5bddc9bc2d`. The build is [signed with cosign](https://search.sigstore.dev/?logIndex=156590257).
 
 # Deploying
 
@@ -70,10 +57,9 @@ This option provides a lot more flexibility in the release verification layer, a
 This operation "seals" the project by removing your project owner role, which means that you will no longer be able to make any modifications or access any details of anything in the project. To unseal the project, someone with the Organization Administrator can grant access to the project. The OA cannot do anything beyond granting IAM access to the project, and the fact that IAM access was granted will show up in audit logs.
 
 # TODO
-1. auditing scripts
-2. gcs backend for persistence to prevent TOFU on instance preemption
-    - an alternative is litestream
-3. Modify omniwitness to allow using ed25519 keys in KMS
 
-with spot instances, this is $10.58 per month, or currently a bit under $9 in us-east5.
-for normal  instances, this is $44.96 per month
+1. Auditing scripts and public audit logs.
+2. Fetch checkpoints on startup from distributor and verify that they are signed by other witnesses instead of pure TOFU.
+
+With spot instances, running a witness is $10.58 per month, or currently a bit under $9 in us-east5.
+Running a witness on a normal instance costs $44.96 per month.
