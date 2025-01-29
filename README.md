@@ -1,6 +1,6 @@
 ```
-ConfidentialWitness-buoyant-planet+af4c4125+AaUzzyskbukNz6DJHmPv7DZ4tG4heL51U2ER21TQN9Zm
-curl buoyant-planet.itko.dev/witness/v0/logs
+ConfidentialWitness-buoyant-breeze+0259a715+Aa8Q+XxXXROuuaEyqioqILcmsr4M8bQ6tQYHU5NQBnCe
+curl buoyant-breeze.itko.dev/witness/v0/logs
 ```
 
 # How this works

@@ -28,6 +28,12 @@ resource "google_project_service" "confidentialcomputing" {
   disable_on_destroy = false
 }
 
+resource "google_project_service" "cloudresourcemanager" {
+  project            = var.project_id
+  service            = "cloudresourcemanager.googleapis.com"
+  disable_on_destroy = false
+}
+
 # Remove all default service accounts. Specifically used for removing the default compute service account
 resource "google_project_default_service_accounts" "remove_default" {
   project = var.project_id
