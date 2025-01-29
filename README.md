@@ -3,6 +3,8 @@ ConfidentialWitness-buoyant-breeze+0259a715+Aa8Q+XxXXROuuaEyqioqILcmsr4M8bQ6tQYH
 curl buoyant-breeze.itko.dev/witness/v0/logs
 ```
 
+Witness auditing information can be found [here](https://github.com/aditsachde/confidential-witness-audits/tree/main/buoyant-breeze). This information is fetched directly from GCP by a Github Actions workflow to ensure it has not been tampered with and refreshed every 24 hours. 
+
 # How this works
 
 The private key of a witness needs to be protected from misuse. Armored witness does this by using a microcontroller and its related security features. This project attempts to provide similar guarantees by using GCP's confidential computing support.
@@ -58,8 +60,7 @@ This operation "seals" the project by removing your project owner role, which me
 
 # TODO
 
-1. Auditing scripts and public audit logs.
-2. Fetch checkpoints on startup from distributor and verify that they are signed by other witnesses instead of pure TOFU.
+1. Fetch checkpoints on startup from distributor and verify that they are signed by other witnesses instead of pure TOFU.
 
 With spot instances, running a witness is $10.58 per month, or currently a bit under $9 in us-east5.
 Running a witness on a normal instance costs $44.96 per month.
